@@ -67,12 +67,38 @@ const gamesList = {
         }
     ]
 }
+const gamepack = [{
+    color: 'black',
+    result: 'win',
+    myRating: 1200,
+    oppRating: 1000,
+    oppName: 'pul12kit',
+    oppPremium: true
+},
+{
+    color: 'white',
+    result: 'win',
+    myRating: 1043,
+    oppRating: 1450,
+    oppName: 'pul12kit',
+    oppPremium: false
+},
+{
+    color: 'black',
+    result: 'lose',
+    myRating: 943,
+    oppRating: 2150,
+    oppName: 'pul12kit',
+    oppPremium: false
+}]
+
 const latestGameType = (n, timeClass, listOfGames) => {
+    //was .games.filter
     let filteredArr = listOfGames.games.filter(function (el) {
         return el.time_class == timeClass;
     });
     filteredArr.splice(n, filteredArr - n);
-    console.log(filteredArr);
+    return filteredArr;
 }
 
 async function premiumStatus(username){
@@ -84,7 +110,92 @@ async function premiumStatus(username){
         return response.status == "premium" ? true : false;
     });
     return await hasPremium;
-    console.log(answer);
+}
+
+async function sumsForDisplay(arrOfGames){
+    function winSum(color, result, premium){
+        let counter = 0;
+        let ratingCounter = 0;
+        let oppRatingCounter = 0;
+        for (let i = 0; i < arrOfGames.length; i++){
+            if (arrOfGames[i]['color'] == color && arrOfGames[i]['result'] == result && arrOfGames[i]['oppPremium'] == premium){
+                counter++;
+                ratingCounter += arrOfGames[i]['myRating'];
+                oppRatingCounter += arrOfGames[i]['oppRating'];
+            }
+        }
+        const avg = Math.floor(ratingCounter / counter);
+        const oppAvg = Math.floor(oppRatingCounter / counter);
+        const percentageWin = Math.floor(counter/arrOfGames.length*100)
+        return [counter, percentageWin, avg, oppAvg];
+    }
+    const stats = {
+        whiteWinPrem: winSum('white', 'win', true),
+        whiteWinBasic: winSum('white', 'win', false),
+        whiteLosePrem: winSum('white', 'lose', true),
+        whiteLoseBasic: winSum('white', 'lose', false),
+        blackWinPrem: winSum('black', 'win', true),
+        blackWinBasic: winSum('black', 'win', false),
+        blackLosePrem: winSum('black', 'lose', true),
+        blackLoseBasic: winSum('black', 'lose', false),
+        whiteDrawPrem: winSum('white', 'draw', true),
+        whiteDrawBasic: winSum('white', 'draw', false),
+        blackDrawPrem: winSum('black', 'draw', true),
+        blackDrawBasic: winSum('black', 'draw', false)
+    }
+    return stats;
+}
+
+async function relevantGameObjects(arrOfGames){
+    let miniArr = [];
+    arrOfGames.forEach(e => {
+        if (e.white.username == 'dsebom'){
+            let gameResult = null;
+            if (e.white.result != 'win' && e.black.result != 'win'){
+                gameResult = 'draw';
+            } else if (e.white.result != 'win') { gameResult = 'lose' }
+            else { gameResult = 'win'}
+            let game = {
+                color: 'white',
+                result: gameResult,
+                myRating: e.white.rating,
+                oppRating: e.black.rating,
+                oppName: e.black.username,
+                oppPremium: null
+            }
+            miniArr.push(game);
+        } else {
+            let gameResult = null;
+            if (e.black.result != 'win' && e.white.result != 'win'){
+                gameResult = 'draw';
+            } else if (e.black.result != 'win') { gameResult = 'lose' }
+            else { gameResult = 'win'}
+            let game = {
+                color: 'black',
+                result: gameResult,
+                myRating: e.black.rating,
+                oppRating: e.white.rating,
+                oppName: e.white.username,
+                oppPremium: null
+            }
+            miniArr.push(game);
+        }
+    });
+    return miniArr;
+}
+
+async function requestStatusOnce(gamePacket){
+    let requestedUsers = {
+    };
+    for (const pack of gamePacket){
+        if (requestedUsers.hasOwnProperty(pack.oppName)){
+            pack.oppPremium = requestedUsers[pack.oppName];
+        } else {
+            pack.oppPremium = await premiumStatus(pack.oppName);
+            requestedUsers[pack.oppName] = pack.oppPremium;
+        }
+    }
+    return gamePacket;
 }
 
 async function testPrint(name) {
@@ -93,17 +204,42 @@ async function testPrint(name) {
     console.log(answer);
 }
 
-premiumStatus('glamourmanure');
 
-/*
-fetch("https://api.chess.com/pub/player/dsebom")
-  .then(function (response) {
-    return response.json();
-  })
-  .then(function (myJson) {
-    console.log(myJson);
-  })
-  .catch(function (error) {
-    console.log("Error: " + error);
-  });
-  */
+
+async function getGamesForDate(month, year){
+    const games = await fetch(`https://api.chess.com/pub/player/dsebom/games/${year}/${month}`)
+      .then(function (response) {
+        return response.json();
+      })
+      .catch(function (error) {
+        console.log("Error: " + error);
+      });
+    return games;
+}
+
+async function initiate(){
+    const games = await getGamesForDate('09', '2021');
+    const gamesOfType = await latestGameType(10, 'rapid', games);
+    const gamePack = await relevantGameObjects(gamesOfType);
+    const premiumChecked = await requestStatusOnce(gamePack);
+    console.log(premiumChecked);
+    const forDisplay = await sumsForDisplay(premiumChecked);
+    console.log(forDisplay);
+    console.log(percentagesFromStats(forDisplay));
+    
+}
+
+function percentagesFromStats(forDisplay){
+    console.log(`You win ${(forDisplay.whiteWinPrem[0] / (forDisplay.whiteWinPrem[0] + forDisplay.whiteLosePrem[0] + forDisplay.whiteDrawPrem[0])) * 100} percent of your matches VS premium accounts as white`);
+    console.log(`You win ${(forDisplay.whiteWinBasic[0] / (forDisplay.whiteWinBasic[0] + forDisplay.whiteLoseBasic[0] + forDisplay.whiteDrawBasic[0])) * 100} percent of your matches VS basic accounts as white`);
+    console.log(`You win ${(forDisplay.blackWinPrem[0] / (forDisplay.blackWinPrem[0] + forDisplay.blackLosePrem[0] + forDisplay.blackDrawPrem[0])) * 100} percent of your matches VS premium accounts as black`);
+    console.log(`You win ${(forDisplay.blackWinBasic[0] / (forDisplay.blackWinBasic[0] + forDisplay.blackLoseBasic[0] + forDisplay.blackDrawBasic[0])) * 100} percent of your matches VS basic accounts as black`);
+    console.log(`You draw ${(forDisplay.whiteDrawPrem[0] / (forDisplay.whiteWinPrem[0] + forDisplay.whiteLosePrem[0] + forDisplay.whiteDrawPrem[0])) * 100} percent of your matches VS premium accounts as white`);
+    console.log(`You draw ${(forDisplay.whiteDrawBasic[0] / (forDisplay.whiteDrawBasic[0] + forDisplay.whiteLoseBasic[0] + forDisplay.whiteWinBasic[0])) * 100} percent of your matches VS basic accounts as white`);
+
+}
+
+initiate();
+//console.log(relevantGameObjects(gamesList));
+
+export { relevantGameObjects, addition };
